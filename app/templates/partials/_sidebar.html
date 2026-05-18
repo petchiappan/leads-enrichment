@@ -1,0 +1,32 @@
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <h1>⚡ Leads AI</h1>
+        <span>Enrichment Pipeline v2</span>
+    </div>
+    <nav class="sidebar-nav">
+        <a href="/admin/" class="{% if current_page == 'dashboard' %}active{% endif %}">
+            <span class="icon">📊</span> Dashboard
+        </a>
+        <a href="/admin/leads" class="{% if current_page == 'leads' %}active{% endif %}">
+            <span class="icon">🏢</span> Leads
+        </a>
+        <a href="/admin/enrich" class="{% if current_page == 'enrich' %}active{% endif %}">
+            <span class="icon">⚡</span> Enrich
+        </a>
+        <a href="/admin/pipeline" class="{% if current_page == 'pipeline' %}active{% endif %}">
+            <span class="icon">🔄</span> Pipeline Runs
+        </a>
+        <a href="/admin/search" class="{% if current_page == 'search' %}active{% endif %}">
+            <span class="icon">🔍</span> Semantic Search
+        </a>
+        <a href="/admin/tokens" class="{% if current_page == 'tokens' %}active{% endif %}">
+            <span class="icon">📈</span> Token Usage
+        </a>
+        <a href="/admin/settings" class="{% if current_page == 'settings' %}active{% endif %}">
+            <span class="icon">⚙️</span> Settings
+        </a>
+    </nav>
+    <div class="sidebar-footer">
+        <a href="/docs" style="color:var(--blue-300);text-decoration:none;font-size:.8rem;">API Docs ↗</a>
+    </div>
+</aside>

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "partials/_status_badge.html" import status_badge %}
+{% from "partials/_pipeline_stepper.html" import pipeline_stepper %}
+{% block title %}Lead Detail{% endblock %}
+{% block page_title %}Lead Detail{% endblock %}
+{% block breadcrumb %}Leads / {{ lead.raw_input.get('company_name', '') if lead and lead.raw_input else 'Not Found' }}{% endblock %}
+
+{% block content %}
+{% if lead %}
+<div class="flex gap-4 items-center mb-6">
+    <h3 class="font-semibold" style="font-size:1.2rem;color:var(--blue-800)">{{ lead.raw_input.get('company_name', 'Unknown') if lead.raw_input else 'Unknown' }}</h3>
+    {{ status_badge(lead.status) }}
+</div>
+
+<div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="kpi-card blue">
+        <div class="kpi-icon">🆔</div>
+        <div><div class="kpi-label">Request ID</div><div class="text-mono text-sm mt-2" style="word-break:break-all">{{ lead.request_id }}</div></div>
+    </div>
+    <div class="kpi-card green">
+        <div class="kpi-icon">📅</div>
+        <div><div class="kpi-label">Created</div><div class="text-sm mt-2">{{ lead.created_at.strftime('%Y-%m-%d %H:%M:%S') if lead.created_at else 'N/A' }}</div></div>
+    </div>
+    <div class="kpi-card amber">
+        <div class="kpi-icon">🔄</div>
+        <div><div class="kpi-label">Updated</div><div class="text-sm mt-2">{{ lead.updated_at.strftime('%Y-%m-%d %H:%M:%S') if lead.updated_at else 'N/A' }}</div></div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header"><h3>Enriched Data</h3></div>
+        {% if lead.enriched_data %}
+        <div class="json-viewer" data-json='{{ lead.enriched_data | tojson }}'>{{ lead.enriched_data | tojson(indent=2) }}</div>
+        {% else %}
+        <div class="empty-state" style="padding:30px"><div class="icon">📝</div><h3>No enriched data yet</h3></div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h3>Pipeline Trace</h3></div>
+        {% if pipeline_logs %}
+        {{ pipeline_stepper(pipeline_logs) }}
+        {% else %}
+        <div class="empty-state" style="padding:30px"><div class="icon">🔄</div><h3>No pipeline logs</h3></div>
+        {% endif %}
+    </div>
+</div>
+
+{% if token_records %}
+<div class="card mt-4">
+    <div class="card-header"><h3>Token Usage</h3></div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Step</th><th>Model</th><th>Input</th><th>Output</th><th>Total</th></tr></thead>
+            <tbody>
+            {% for t in token_records %}
+            <tr>
+                <td class="text-mono text-sm">{{ t.step_name }}</td>
+                <td class="text-sm">{{ t.model_name }}</td>
+                <td>{{ "{:,}".format(t.input_tokens) }}</td>
+                <td>{{ "{:,}".format(t.output_tokens) }}</td>
+                <td class="font-semibold">{{ "{:,}".format(t.total_tokens) }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mt-4">
+    <div class="card-header"><h3>Raw Input</h3></div>
+    <div class="json-viewer" data-json='{{ lead.raw_input | tojson }}'>{{ lead.raw_input | tojson(indent=2) }}</div>
+</div>
+
+{% else %}
+<div class="empty-state"><div class="icon">❌</div><h3>Lead not found</h3><p class="text-sm text-light"><a href="/admin/leads" class="link">Back to leads</a></p></div>
+{% endif %}
+{% endblock %}

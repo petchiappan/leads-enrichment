@@ -1,0 +1,22 @@
+{% macro pipeline_stepper(logs) %}
+<div class="stepper">
+{% for log in logs %}
+    <div class="step">
+        {% if not loop.last %}<div class="step-line"></div>{% endif %}
+        <div class="step-icon {{ log.status }}">
+            {% if log.status == 'success' %}✓{% elif log.status == 'failed' %}✗{% elif log.status == 'skipped' %}—{% else %}⟳{% endif %}
+        </div>
+        <div class="step-content">
+            <div class="step-title">{{ log.step_name }}</div>
+            <div class="step-meta">
+                {{ log.status }} · {{ log.timestamp.strftime('%H:%M:%S') if log.timestamp else '' }}
+            </div>
+            {% if log.payload %}
+            <button class="btn btn-secondary btn-sm mt-2" data-toggle-payload="payload-{{ loop.index }}">Toggle Payload</button>
+            <div id="payload-{{ loop.index }}" class="step-payload hidden json-viewer" data-json='{{ log.payload | tojson }}'>{{ log.payload | tojson(indent=2) }}</div>
+            {% endif %}
+        </div>
+    </div>
+{% endfor %}
+</div>
+{% endmacro %}

@@ -1,0 +1,13 @@
+{% macro status_badge(status) %}
+{% if status == 'completed' or status == 'success' %}
+<span class="badge badge-completed"><span class="pulse"></span>{{ status }}</span>
+{% elif status == 'processing' or status == 'started' %}
+<span class="badge badge-processing"><span class="pulse"></span>{{ status }}</span>
+{% elif status == 'failed' %}
+<span class="badge badge-failed"><span class="pulse"></span>{{ status }}</span>
+{% elif status == 'skipped' %}
+<span class="badge badge-skipped">{{ status }}</span>
+{% else %}
+<span class="badge badge-pending">{{ status }}</span>
+{% endif %}
+{% endmacro %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Semantic Search{% endblock %}
+{% block page_title %}Semantic Search{% endblock %}
+{% block breadcrumb %}Search enriched leads with natural language{% endblock %}
+
+{% block content %}
+<div class="card mb-6">
+    <div class="card-header"><h3>🔍 Search Leads</h3></div>
+    <form id="search-form">
+        <div class="grid-2">
+            <div class="form-group">
+                <label for="search-query">Search Query</label>
+                <input type="text" id="search-query" placeholder="e.g., AI companies in healthcare" required>
+                <small>Uses pgvector cosine similarity to match against enriched lead data.</small>
+            </div>
+            <div class="form-group">
+                <label for="search-limit">Max Results</label>
+                <select id="search-limit">
+                    <option value="5">5</option>
+                    <option value="10" selected>10</option>
+                    <option value="25">25</option>
+                </select>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Search →</button>
+    </form>
+</div>
+
+<div id="search-results">
+    <div class="empty-state"><div class="icon">🔍</div><h3>Enter a search query</h3><p class="text-sm text-light">Results will appear here.</p></div>
+</div>
+{% endblock %}

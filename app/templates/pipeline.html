@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "partials/_status_badge.html" import status_badge %}
+{% from "partials/_pipeline_stepper.html" import pipeline_stepper %}
+{% block title %}Pipeline Runs{% endblock %}
+{% block page_title %}Pipeline Runs{% endblock %}
+{% block breadcrumb %}Execution History{% endblock %}
+
+{% block content %}
+{% if runs %}
+{% for run in runs %}
+<div class="card mb-4">
+    <div class="card-header">
+        <div class="flex items-center gap-4">
+            <h3>{{ run.lead.raw_input.get('company_name', 'Unknown') if run.lead.raw_input else 'Unknown' }}</h3>
+            {{ status_badge(run.lead.status) }}
+        </div>
+        <div class="flex items-center gap-4">
+            <span class="text-xs text-light">{{ run.step_count }} steps</span>
+            <a href="/admin/leads/{{ run.lead.request_id }}" class="btn btn-secondary btn-sm">View Lead →</a>
+        </div>
+    </div>
+    <p class="text-mono text-xs text-light mb-4">{{ run.lead.request_id }} · {{ run.lead.created_at.strftime('%Y-%m-%d %H:%M') if run.lead.created_at else '' }}</p>
+    {% if run.logs %}
+    {{ pipeline_stepper(run.logs) }}
+    {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<div class="empty-state"><div class="icon">🔄</div><h3>No pipeline runs yet</h3><p class="text-sm text-light">Submit an enrichment to see pipeline execution here.</p></div>
+{% endif %}
+{% endblock %}

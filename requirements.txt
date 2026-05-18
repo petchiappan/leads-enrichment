@@ -1,0 +1,36 @@
+# ── Core Framework ──
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+gunicorn==23.0.0
+
+# ── Database ──
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.1
+pgvector==0.3.6
+psycopg2-binary==2.9.10
+
+# ── Validation & Settings ──
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# ── Async Task Queue ──
+celery[redis]==5.4.0
+redis==5.2.1
+
+# ── AI / LLM ──
+openai==1.58.1
+
+# ── HTTP & Retry ──
+httpx==0.28.1
+tenacity==9.0.0
+
+# ── Admin UI (Jinja2 Templates) ──
+jinja2==3.1.5
+python-multipart==0.0.20
+
+# ── WebSockets (included in uvicorn[standard]) ──
+websockets==14.1
+
+# ── Utilities ──
+python-dotenv==1.0.1

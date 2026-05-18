@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block breadcrumb %}Admin Configuration{% endblock %}
+
+{% block content %}
+<div class="card mb-6">
+    <div class="card-header"><h3>Add Configuration</h3></div>
+    <div class="flex gap-4 items-center">
+        <input type="text" id="new-config-key" placeholder="Setting key" style="flex:1">
+        <input type="text" id="new-config-value" placeholder="Setting value" style="flex:1">
+        <button class="btn btn-primary" onclick="addConfig()">Add</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>Current Configuration</h3></div>
+    {% if configs %}
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Key</th><th>Value</th><th>Actions</th></tr></thead>
+            <tbody>
+            {% for c in configs %}
+            <tr>
+                <td class="text-mono font-semibold">{{ c.setting_key }}</td>
+                <td class="text-sm">{{ c.setting_value }}</td>
+                <td class="config-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="editConfig('{{ c.setting_key }}', '{{ c.setting_value }}')">Edit</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteConfig('{{ c.setting_key }}')">Delete</button>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state"><div class="icon">⚙️</div><h3>No configuration entries</h3><p class="text-sm text-light">Add key-value pairs above to configure the pipeline.</p></div>
+    {% endif %}
+</div>
+{% endblock %}

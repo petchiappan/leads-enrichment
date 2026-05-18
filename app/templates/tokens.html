@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Token Usage{% endblock %}
+{% block page_title %}Token Usage{% endblock %}
+{% block breadcrumb %}OpenAI Token Consumption{% endblock %}
+
+{% block content %}
+<div class="kpi-grid">
+    <div class="kpi-card cyan">
+        <div class="kpi-icon">↑</div>
+        <div><div class="kpi-value">{{ "{:,}".format(summary.total_input_tokens) }}</div><div class="kpi-label">Input Tokens</div></div>
+    </div>
+    <div class="kpi-card blue">
+        <div class="kpi-icon">↓</div>
+        <div><div class="kpi-value">{{ "{:,}".format(summary.total_output_tokens) }}</div><div class="kpi-label">Output Tokens</div></div>
+    </div>
+    <div class="kpi-card green">
+        <div class="kpi-icon">Σ</div>
+        <div><div class="kpi-value">{{ "{:,}".format(summary.total_tokens) }}</div><div class="kpi-label">Total Tokens</div></div>
+    </div>
+    <div class="kpi-card amber">
+        <div class="kpi-icon">📊</div>
+        <div><div class="kpi-value">{{ summary.total_requests }}</div><div class="kpi-label">Total Requests</div></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>Usage Records</h3></div>
+    {% if summary.records %}
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Request ID</th><th>Step</th><th>Model</th><th>Input</th><th>Output</th><th>Total</th><th>Time</th></tr></thead>
+            <tbody>
+            {% for r in summary.records %}
+            <tr>
+                <td><a href="/admin/leads/{{ r.request_id }}" class="td-mono truncate link">{{ r.request_id | string | truncate(12, True, '…') }}</a></td>
+                <td class="text-mono text-sm">{{ r.step_name }}</td>
+                <td class="text-sm">{{ r.model_name }}</td>
+                <td>{{ "{:,}".format(r.input_tokens) }}</td>
+                <td>{{ "{:,}".format(r.output_tokens) }}</td>
+                <td class="font-semibold">{{ "{:,}".format(r.total_tokens) }}</td>
+                <td class="text-sm text-light">{{ r.created_at.strftime('%m-%d %H:%M') if r.created_at else '' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state"><div class="icon">📈</div><h3>No token usage recorded</h3><p class="text-sm text-light">Token data will appear after pipeline runs using OpenAI.</p></div>
+    {% endif %}
+</div>
+{% endblock %}

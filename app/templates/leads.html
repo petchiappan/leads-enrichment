@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "partials/_status_badge.html" import status_badge %}
+{% block title %}Leads{% endblock %}
+{% block page_title %}Leads{% endblock %}
+{% block breadcrumb %}All Leads · {{ total }} total{% endblock %}
+
+{% block content %}
+<div class="filter-tabs">
+    <a href="/admin/leads" class="filter-tab {% if not status_filter %}active{% endif %}">All ({{ total }})</a>
+    <a href="/admin/leads?status=pending" class="filter-tab {% if status_filter == 'pending' %}active{% endif %}">Pending</a>
+    <a href="/admin/leads?status=processing" class="filter-tab {% if status_filter == 'processing' %}active{% endif %}">Processing</a>
+    <a href="/admin/leads?status=completed" class="filter-tab {% if status_filter == 'completed' %}active{% endif %}">Completed</a>
+    <a href="/admin/leads?status=failed" class="filter-tab {% if status_filter == 'failed' %}active{% endif %}">Failed</a>
+</div>
+
+{% if leads %}
+<div class="card">
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Company</th><th>Request ID</th><th>Status</th><th>Created</th><th>Action</th></tr></thead>
+            <tbody>
+            {% for lead in leads %}
+            <tr>
+                <td class="font-semibold">{{ lead.raw_input.get('company_name', 'Unknown') if lead.raw_input else 'Unknown' }}</td>
+                <td class="td-mono truncate">{{ lead.request_id }}</td>
+                <td>{{ status_badge(lead.status) }}</td>
+                <td class="text-sm text-light">{{ lead.created_at.strftime('%Y-%m-%d %H:%M') if lead.created_at else '' }}</td>
+                <td><a href="/admin/leads/{{ lead.request_id }}" class="btn btn-secondary btn-sm">View →</a></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}<a href="/admin/leads?page={{ page - 1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}">← Prev</a>{% endif %}
+    <span class="current">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}<a href="/admin/leads?page={{ page + 1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}">Next →</a>{% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state"><div class="icon">🏢</div><h3>No leads found</h3><p class="text-sm text-light">{% if status_filter %}No leads with status "{{ status_filter }}".{% else %}Submit an enrichment to create your first lead.{% endif %}</p></div>
+{% endif %}
+{% endblock %}
