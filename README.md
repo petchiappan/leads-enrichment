@@ -66,7 +66,7 @@ docker compose up --build
 # 1. http://localhost:8000/docs
 
 # 2. http://localhost:8000/admin
-
+```
 ## Project Structure
 
 ```
