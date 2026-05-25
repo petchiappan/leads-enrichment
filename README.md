@@ -58,6 +58,15 @@ alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```
 
+```Docker
+# 1. Build the app
+docker compose up --build
+```
+```Endpoints
+# 1. http://localhost:8000/docs
+
+# 2. http://localhost:8000/admin
+
 ## Project Structure
 
 ```
