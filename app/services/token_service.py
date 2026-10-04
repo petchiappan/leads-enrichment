@@ -82,4 +82,13 @@ def record_usage_sync(
     )
     session.add(usage)
     session.flush()
+
+    try:
+        from app import metrics
+        metrics.llm_tokens_total.labels(step_name=step_name, token_type="input").inc(input_tokens)
+        metrics.llm_tokens_total.labels(step_name=step_name, token_type="output").inc(output_tokens)
+    except Exception:
+        pass
+
     return usage
+

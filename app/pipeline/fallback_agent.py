@@ -17,39 +17,17 @@ from openai import OpenAI
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.pipeline import prompt_registry
 from app.schemas.fallback import AgenticExtractionResult
 from app.services import token_service
+from app.services.observability import timed_llm_call
 
 logger = logging.getLogger(__name__)
 
 
-FALLBACK_SYSTEM_PROMPT = """You are an expert business intelligence analyst. Your task is to find accurate information about a company and fill in missing data fields.
+# Fallback module constant preserved for backwards-compatibility
+FALLBACK_SYSTEM_PROMPT = prompt_registry.HARDCODED_PROMPTS["fallback_system_prompt"]["content"]
 
-You MUST respond with a valid JSON object matching this exact schema:
-{
-    "company_name": "string (required)",
-    "ceo_name": "string or null",
-    "ceo_email": "string or null",
-    "company_description": "string or null",
-    "linkedin_url": "string or null",
-    "linkedin_company_url": "string or null",
-    "employee_count": "integer or null",
-    "company_website": "string or null",
-    "funding_raised": "string or null",
-    "industry": "string or null",
-    "founding_year": "integer or null",
-    "news_articles": "list of strings or null",
-    "confidence_score": "float between 0.0 and 1.0 (required)",
-    "sources_used": "list of strings (required)"
-}
-
-Important rules:
-1. Only fill in fields you have high confidence about.
-2. Set fields you're uncertain about to null.
-3. The confidence_score should reflect your overall certainty (0.0 = no confidence, 1.0 = fully verified).
-4. Always list the sources you used in sources_used.
-5. If you already have partial data from API results, incorporate and improve upon it.
-"""
 
 
 def run_fallback(
@@ -73,19 +51,33 @@ def run_fallback(
     """
     client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
+    # Phase 5: sanitize existing data to protect PII in LLM prompt
+    from app.pipeline import guardrails
+    sanitized_data = guardrails.redact_pii_from_dict(existing_data, session=session)
+
     # Build the user prompt
-    user_prompt = _build_user_prompt(company_name, missing_fields, existing_data)
+    user_prompt = _build_user_prompt(company_name, missing_fields, sanitized_data)
 
     logger.info(
         f"[{request_id}] Fallback agent: requesting {settings.OPENAI_MODEL} "
         f"for {len(missing_fields)} missing fields"
     )
 
-    # Call OpenAI with structured JSON output (per skill_llm_fallback.md)
-    response = client.chat.completions.create(
+
+    # Load active prompt from registry (DB or fallback)
+    active_prompt = prompt_registry.get_active_prompt(
+        "fallback_system_prompt",
+        environment=settings.APP_ENV,
+        session=session,
+    )
+
+    # Call OpenAI with structured JSON output and latency timing
+    response, duration_s = timed_llm_call(
+        client=client,
+        step_name="spawn_fallback_agent",
         model=settings.OPENAI_MODEL,
         messages=[
-            {"role": "system", "content": FALLBACK_SYSTEM_PROMPT},
+            {"role": "system", "content": active_prompt.content},
             {"role": "user", "content": user_prompt},
         ],
         response_format={"type": "json_object"},
@@ -107,14 +99,19 @@ def run_fallback(
 
     # Parse response into AgenticExtractionResult
     raw_content = response.choices[0].message.content
-    logger.info(f"[{request_id}] Fallback agent raw response: {raw_content[:500]}")
+    logger.info(f"[{request_id}] Fallback agent raw response ({duration_s:.3f}s): {raw_content[:500]}")
 
     result = AgenticExtractionResult.model_validate_json(raw_content)
+    setattr(result, "_prompt_version", active_prompt.version)
+    setattr(result, "_prompt_version_id", active_prompt.id)
+    setattr(result, "_duration_s", duration_s)
 
     logger.info(
-        f"[{request_id}] Fallback agent completed: "
-        f"confidence={result.confidence_score}, sources={len(result.sources_used)}"
+        f"[{request_id}] Fallback agent completed in {duration_s:.3f}s: "
+        f"confidence={result.confidence_score}, sources={len(result.sources_used)}, "
+        f"prompt_version={active_prompt.version}"
     )
+
 
     return result
 

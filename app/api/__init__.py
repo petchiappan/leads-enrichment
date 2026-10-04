@@ -10,6 +10,8 @@ from app.api.pipeline import router as pipeline_router
 from app.api.admin import router as admin_router
 from app.api.token_usage import router as token_usage_router
 from app.api.search import router as search_router
+from app.api.prompts import router as prompts_router
+from app.api.review import router as review_router
 
 __all__ = [
     "enrich_router",
@@ -18,4 +20,8 @@ __all__ = [
     "admin_router",
     "token_usage_router",
     "search_router",
+    "prompts_router",
+    "review_router",
 ]
+
+

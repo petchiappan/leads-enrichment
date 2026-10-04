@@ -53,3 +53,12 @@ class EnrichResponse(BaseModel):
         default="Enrichment job has been queued for processing.",
         description="Human-readable status message.",
     )
+    cached: bool = Field(
+        default=False,
+        description="True if a fresh enriched lead was reused from dedup cache.",
+    )
+    cached_since: str | None = Field(
+        default=None,
+        description="Timestamp when the cached record was originally enriched.",
+    )
+

@@ -27,11 +27,17 @@ from tenacity import (
     wait_exponential,
 )
 
+from app import metrics
 from app.config import settings
+from app.pipeline import prompt_registry
 from app.pipeline.fallback_agent import run_fallback
+from app.pipeline.guardrails import check_confidence, sanitise_input
 from app.schemas.enrich import EnrichRequest
 from app.schemas.fallback import AgenticExtractionResult, MissingGapsRequest
 from app.services import embedding_service, lead_service, token_service
+from app.services.observability import timed_llm_call
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +46,18 @@ logger = logging.getLogger(__name__)
 
 
 def validate_input(raw_input: dict[str, Any]) -> EnrichRequest:
-    """Validate the raw input against the EnrichRequest Pydantic schema.
+    """Validate and sanitise the raw input against the EnrichRequest Pydantic schema.
+
+    Phase 1: company_name is sanitised against prompt injection and control
+    characters before Pydantic validation.
 
     Returns parsed EnrichRequest or raises ValidationError.
     """
+    # Sanitise company_name before validation (no DB session needed — uses defaults)
+    if isinstance(raw_input.get("company_name"), str):
+        raw_input = dict(raw_input)  # don't mutate the original
+        raw_input["company_name"] = sanitise_input(raw_input["company_name"])
+
     return EnrichRequest.model_validate(raw_input)
 
 
@@ -62,9 +76,19 @@ def _call_api(
     headers: dict[str, str] | None = None,
     timeout: float = 15.0,
 ) -> dict[str, Any]:
-    """Make a single API call with tenacity retry (3 attempts per skill spec)."""
+    """Make a single API call with tenacity retry (3 attempts per skill spec).
+
+    Phase 1: 429 (rate limit) and 5xx (server error) responses are now treated
+    as retryable by raising httpx.HTTPError before raise_for_status is called.
+    Previously these were HTTPStatusError and were NOT caught by tenacity.
+    """
     with httpx.Client(timeout=timeout) as client:
         response = client.get(url, params=params, headers=headers)
+        # Treat rate-limit and server errors as transient — tenacity will retry
+        if response.status_code == 429 or response.status_code >= 500:
+            raise httpx.HTTPError(
+                f"Retryable HTTP status {response.status_code} from {url}"
+            )
         response.raise_for_status()
         return response.json()
 
@@ -93,6 +117,7 @@ def _fetch_google_news(company_name: str) -> dict[str, Any]:
         return {"news_articles": articles, "_source": "google_news"}
     except Exception as e:
         logger.warning(f"Google News API failed: {e}")
+        metrics.api_call_errors_total.labels(source="google_news").inc()
         return {"news_articles": None, "_source": "google_news", "_error": str(e)}
 
 
@@ -122,6 +147,7 @@ def _fetch_lusha(company_name: str, company_domain: str | None) -> dict[str, Any
         }
     except Exception as e:
         logger.warning(f"Lusha API failed: {e}")
+        metrics.api_call_errors_total.labels(source="lusha").inc()
         return {"_source": "lusha", "_error": str(e)}
 
 
@@ -156,6 +182,7 @@ def _fetch_clearbit(company_name: str, company_domain: str | None) -> dict[str, 
         }
     except Exception as e:
         logger.warning(f"Clearbit API failed: {e}")
+        metrics.api_call_errors_total.labels(source="clearbit").inc()
         return {"_source": "clearbit", "_error": str(e)}
 
 
@@ -188,7 +215,9 @@ def _fetch_hunter(company_domain: str | None) -> dict[str, Any]:
         }
     except Exception as e:
         logger.warning(f"Hunter.io API failed: {e}")
+        metrics.api_call_errors_total.labels(source="hunter").inc()
         return {"_source": "hunter", "_error": str(e)}
+
 
 
 def fetch_apis(
@@ -212,6 +241,8 @@ def fetch_apis(
         ("google_news", _fetch_google_news(company_name)),
     ]
 
+    provenance: dict[str, str] = {"company_name": "input"}
+
     for source_name, result in fetchers:
         if result.get("_error"):
             api_errors.append({"source": source_name, "error": result["_error"]})
@@ -222,9 +253,12 @@ def fetch_apis(
         for key, value in result.items():
             if not key.startswith("_") and value is not None:
                 merged[key] = value
+                provenance[key] = source_name
 
     merged["_api_sources_used"] = sources_used
     merged["_api_errors"] = api_errors
+    merged["_field_provenance"] = provenance
+
 
     logger.info(
         f"fetch_apis complete: {len(sources_used)} sources queried, "
@@ -272,20 +306,33 @@ def evaluate_intelligence_gate(
         try:
             client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
+            active_prompt = prompt_registry.get_active_prompt(
+                "intelligence_gate_prompt",
+                environment=settings.APP_ENV,
+                session=session,
+            )
+
+            # Phase 5: sanitize api_results to prevent leaking PII into gate prompt
+            from app.pipeline.guardrails import redact_pii_from_dict
+            sanitized_api_results = redact_pii_from_dict(api_results, session=session)
+
             gate_prompt = (
                 f"Given this partial company data:\n"
-                f"```json\n{json.dumps(api_results, indent=2, default=str)}\n```\n\n"
+                f"```json\n{json.dumps(sanitized_api_results, indent=2, default=str)}\n```\n\n"
                 f"The following fields are missing: {', '.join(missing_fields)}\n\n"
                 f"Respond with JSON: {{\"missing_fields\": [list of field names that are truly missing "
                 f"and important], \"assessment\": \"brief explanation\"}}"
             )
 
-            response = client.chat.completions.create(
+            response, duration_s = timed_llm_call(
+                client=client,
+                step_name="evaluate_intelligence_gate",
+
                 model=settings.OPENAI_MODEL,
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a data quality assessor. Evaluate which missing fields are important and should be filled by a fallback agent.",
+                        "content": active_prompt.content,
                     },
                     {"role": "user", "content": gate_prompt},
                 ],
@@ -307,16 +354,23 @@ def evaluate_intelligence_gate(
                 )
 
             gate_result = json.loads(response.choices[0].message.content)
+
             confirmed_missing = gate_result.get("missing_fields", missing_fields)
 
             if confirmed_missing:
                 logger.info(
-                    f"[{request_id}] Intelligence gate: {len(confirmed_missing)} gaps confirmed"
+                    f"[{request_id}] Intelligence gate: {len(confirmed_missing)} gaps confirmed "
+                    f"(prompt_version={active_prompt.version})"
                 )
-                return MissingGapsRequest(missing_fields=confirmed_missing)
+                req = MissingGapsRequest(missing_fields=confirmed_missing)
+                setattr(req, "_prompt_version", active_prompt.version)
+                setattr(req, "_prompt_version_id", active_prompt.id)
+                api_results["_gate_prompt_version"] = active_prompt.version
+                return req
             else:
                 logger.info(f"[{request_id}] Intelligence gate: LLM says data is sufficient")
                 return None
+
 
         except Exception as e:
             logger.warning(f"[{request_id}] Intelligence gate LLM call failed: {e}")
@@ -342,15 +396,37 @@ def spawn_fallback_agent(
 ) -> AgenticExtractionResult:
     """Spawn the LLM fallback agent to fill identified data gaps.
 
+    Phase 1: After the agent returns, the confidence score is checked against
+    the configured guardrail threshold. If the score is below threshold,
+    a private '_needs_review' attribute is set on the result object so that
+    save_final_lineage can set lead.status = 'needs_review' instead of
+    'completed'. The result is still persisted — it is not discarded.
+
     Delegates to pipeline.fallback_agent.run_fallback().
     """
-    return run_fallback(
+    result = run_fallback(
         session=session,
         request_id=request_id,
         company_name=company_name,
         missing_fields=gaps.missing_fields,
         existing_data=existing_data,
     )
+
+    # Guardrail: confidence threshold check
+    confidence_ok = check_confidence(result, session=session)
+    if not confidence_ok:
+        logger.warning(
+            "[%s] Guardrail triggered: confidence=%.3f below threshold — will mark needs_review",
+            request_id,
+            result.confidence_score,
+        )
+        # Attach flag as a plain attribute — Pydantic model_extra is not used;
+        # we use object.__setattr__ to avoid Pydantic's immutability guard.
+        object.__setattr__(result, "_needs_review", True)
+    else:
+        object.__setattr__(result, "_needs_review", False)
+
+    return result
 
 
 # ── Step 5: save_final_lineage ──────────────────────────────────────────────
@@ -364,6 +440,10 @@ def save_final_lineage(
 ) -> dict[str, Any]:
     """Merge API data + fallback data, update lead, and store embedding.
 
+    Phase 1: If the fallback agent set _needs_review=True (confidence below
+    threshold), the lead status is set to 'needs_review' instead of 'completed'.
+    The enriched data is still persisted so a reviewer can inspect it.
+
     Returns the final merged enriched_data dict.
     """
     # Build the final merged result
@@ -375,7 +455,19 @@ def save_final_lineage(
         raise ValueError(f"Lead not found for request_id={request_id}")
 
     lead.enriched_data = merged
-    lead.status = "completed"
+
+    # Phase 1: honour guardrail flag from spawn_fallback_agent
+    needs_review = (
+        fallback_data is not None
+        and getattr(fallback_data, "_needs_review", False)
+    )
+    lead.status = "needs_review" if needs_review else "completed"
+
+    # Phase 5: set enriched_at timestamp when completed
+    if lead.status == "completed":
+        from datetime import datetime, timezone
+        lead.enriched_at = datetime.now(timezone.utc)
+
     session.flush()
 
     # Generate and store vector embedding
@@ -389,7 +481,8 @@ def save_final_lineage(
         logger.warning(f"[{request_id}] Failed to store embedding: {e}")
         # Non-fatal — don't fail the pipeline for embedding errors
 
-    logger.info(f"[{request_id}] Final lineage saved: status=completed")
+    final_status = lead.status
+    logger.info(f"[{request_id}] Final lineage saved: status={final_status}")
     return merged
 
 
@@ -404,19 +497,39 @@ def _merge_results(
     """
     # Start with clean API data (remove private keys)
     merged = {k: v for k, v in api_data.items() if not k.startswith("_")}
+    provenance = dict(api_data.get("_field_provenance", {}))
 
     if fallback_data:
         fallback_dict = fallback_data.model_dump()
         for key, value in fallback_dict.items():
             if value is not None and not merged.get(key):
                 merged[key] = value
+                provenance[key] = "fallback"
 
         # Always include confidence and sources from fallback
         merged["fallback_confidence_score"] = fallback_data.confidence_score
         merged["fallback_sources_used"] = fallback_data.sources_used
+        provenance["fallback_confidence_score"] = "fallback"
+        provenance["fallback_sources_used"] = "fallback"
 
     # Include provenance metadata
     merged["_api_sources"] = api_data.get("_api_sources_used", [])
     merged["_had_fallback"] = fallback_data is not None
+    merged["_field_provenance"] = provenance
+
+
+    # Phase 2: include prompt version lineage
+    prompt_versions: dict[str, str] = {}
+    if fallback_data:
+        fb_version = getattr(fallback_data, "_prompt_version", None)
+        if fb_version:
+            prompt_versions["fallback"] = fb_version
+    gate_version = api_data.get("_gate_prompt_version")
+    if gate_version:
+        prompt_versions["gate"] = gate_version
+
+    if prompt_versions:
+        merged["_prompt_versions"] = prompt_versions
 
     return merged
+
