@@ -9,6 +9,8 @@ from app.models.pipeline_log import PipelineLog
 from app.models.admin_config import AdminConfig
 from app.models.vector_embedding import VectorEmbedding
 from app.models.token_usage import TokenUsage
+from app.models.prompt_version import PromptVersion
+from app.models.review_audit import ReviewAudit
 
 __all__ = [
     "Lead",
@@ -16,4 +18,8 @@ __all__ = [
     "AdminConfig",
     "VectorEmbedding",
     "TokenUsage",
+    "PromptVersion",
+    "ReviewAudit",
 ]
+
+

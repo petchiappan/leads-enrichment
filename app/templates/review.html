@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% from "partials/_status_badge.html" import status_badge %}
+{% block title %}Human Review Queue{% endblock %}
+{% block page_title %}Human Review Queue{% endblock %}
+{% block breadcrumb %}Quality / Review Queue{% endblock %}
+
+{% block content %}
+<div class="card mb-6">
+    <div class="card-header">
+        <div>
+            <h3>Pending Review Leads</h3>
+            <p class="text-sm text-light mt-1">Leads with sub-threshold confidence or guardrail triggers requiring human verification.</p>
+        </div>
+        <span class="badge" style="background:#fef3c7;color:#b45309;font-size:.85rem;padding:6px 14px;">
+            {{ leads | length }} Pending
+        </span>
+    </div>
+
+    {% if leads %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>Request ID</th>
+                    <th>Confidence</th>
+                    <th>Sources / Reason</th>
+                    <th>Created</th>
+                    <th style="text-align:right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for lead in leads %}
+                {% set data = lead.enriched_data or {} %}
+                <tr>
+                    <td>
+                        <a href="/admin/leads/{{ lead.request_id }}" class="link font-semibold">
+                            {{ lead.raw_input.get('company_name', 'Unknown') if lead.raw_input else 'Unknown' }}
+                        </a>
+                        {% if lead.company_key %}
+                        <div class="text-mono text-light" style="font-size:.72rem;">{{ lead.company_key }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="td-mono">{{ lead.request_id | string | truncate(18, true, '...') }}</td>
+                    <td>
+                        {% set conf = data.get('confidence_score') %}
+                        {% if conf is not none %}
+                            <span class="badge" style="background:{% if conf >= 0.7 %}#dcfce7;color:#166534{% elif conf >= 0.4 %}#fef3c7;color:#92400e{% else %}#fee2e2;color:#991b1b{% endif %};">
+                                {{ (conf * 100) | round(1) }}%
+                            </span>
+                        {% else %}
+                            <span class="text-light text-sm">N/A</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% set sources = data.get('sources_used', []) %}
+                        {% if sources %}
+                            <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                            {% for s in sources %}
+                                <span class="badge badge-skipped" style="font-size:.7rem;padding:2px 8px;">{{ s }}</span>
+                            {% endfor %}
+                            </div>
+                        {% else %}
+                            <span class="text-light text-sm">No external sources</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-sm text-light">{{ lead.created_at.strftime('%b %d, %H:%M') if lead.created_at else '' }}</td>
+                    <td style="text-align:right">
+                        <div style="display:inline-flex;gap:6px;">
+                            <button onclick="submitReviewAction('{{ lead.request_id }}', 'approve')" class="btn btn-sm" style="background:#22c55e;color:#fff;border:none;cursor:pointer;padding:4px 10px;border-radius:6px;font-weight:600;">
+                                ✓ Approve
+                            </button>
+                            <button onclick="submitReviewAction('{{ lead.request_id }}', 're-enrich')" class="btn btn-sm" style="background:#3b82f6;color:#fff;border:none;cursor:pointer;padding:4px 10px;border-radius:6px;font-weight:600;">
+                                ⟳ Re-enrich
+                            </button>
+                            <button onclick="submitReviewAction('{{ lead.request_id }}', 'reject')" class="btn btn-sm" style="background:#ef4444;color:#fff;border:none;cursor:pointer;padding:4px 10px;border-radius:6px;font-weight:600;">
+                                ✕ Reject
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state" style="padding:40px;">
+        <div class="icon">🎉</div>
+        <h3>No leads awaiting review</h3>
+        <p class="text-sm text-light mt-1">All processed leads meet the required confidence thresholds.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function submitReviewAction(requestId, action) {
+    let notes = '';
+    if (action === 'reject') {
+        notes = prompt('Please enter rejection reason / notes:') || '';
+    }
+    const endpoint = `/api/leads/${requestId}/${action}`;
+    try {
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reviewer: 'admin', notes: notes })
+        });
+        if (res.ok) {
+            showToast(`Lead marked as ${action}`);
+            setTimeout(() => location.reload(), 600);
+        } else {
+            const err = await res.json();
+            showToast(err.detail || 'Action failed', 'error');
+        }
+    } catch {
+        showToast('Network error while applying review decision', 'error');
+    }
+}
+</script>
+{% endblock %}

@@ -47,7 +47,19 @@ class Lead(Base):
         nullable=False,
         default="pending",
         index=True,
-        doc="pending | processing | completed | failed",
+        doc="pending | processing | completed | failed | needs_review",
+    )
+    company_key: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+        index=True,
+        doc="Normalised company key for deduplication.",
+    )
+    enriched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+        doc="Timestamp when enrichment completed successfully.",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -60,6 +72,7 @@ class Lead(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
 
     def __repr__(self) -> str:
         return f"<Lead request_id={self.request_id} status={self.status}>"

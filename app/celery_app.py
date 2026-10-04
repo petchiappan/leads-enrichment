@@ -25,6 +25,17 @@ celery_app.conf.update(
     task_default_queue="enrichment",
     task_routes={
         "app.tasks.enrichment.run_enrichment_pipeline": {"queue": "enrichment"},
+        "app.tasks.refresh.refresh_stale_leads": {"queue": "enrichment"},
     },
-    imports=["app.tasks.enrichment"],
+    imports=[
+        "app.tasks.enrichment",
+        "app.tasks.refresh",
+    ],
+    beat_schedule={
+        "daily-stale-lead-refresh": {
+            "task": "app.tasks.refresh.refresh_stale_leads",
+            "schedule": 86400.0,  # runs every 24 hours
+        },
+    },
 )
+

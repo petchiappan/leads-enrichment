@@ -18,7 +18,15 @@ from app.database import get_db
 from app.models.lead import Lead
 from app.models.pipeline_log import PipelineLog
 from app.models.token_usage import TokenUsage
-from app.services import admin_service, embedding_service, lead_service, pipeline_service, token_service
+from app.services import (
+    admin_service,
+    embedding_service,
+    lead_service,
+    pipeline_service,
+    prompt_service,
+    review_service,
+    token_service,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin-ui"])
 
@@ -34,7 +42,7 @@ async def dashboard(request: Request, db: AsyncSession = Depends(get_db)):
     total = total_result.scalar_one()
 
     counts = {}
-    for s in ("pending", "processing", "completed", "failed"):
+    for s in ("pending", "processing", "completed", "failed", "needs_review"):
         r = await db.execute(select(func.count()).select_from(Lead).where(Lead.status == s))
         counts[s] = r.scalar_one()
 
@@ -43,8 +51,8 @@ async def dashboard(request: Request, db: AsyncSession = Depends(get_db)):
 
     token_summary = await token_service.get_usage_summary(db)
 
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request, "current_page": "dashboard",
+    return templates.TemplateResponse(request, "dashboard.html", {
+        "current_page": "dashboard",
         "total_leads": total, "counts": counts,
         "recent_leads": recent_leads, "token_summary": token_summary,
     })
@@ -64,8 +72,8 @@ async def leads_list(
     leads, total = await lead_service.list_leads(db, skip=skip, limit=per_page, status=status)
     total_pages = max(1, (total + per_page - 1) // per_page)
 
-    return templates.TemplateResponse("leads.html", {
-        "request": request, "current_page": "leads",
+    return templates.TemplateResponse(request, "leads.html", {
+        "current_page": "leads",
         "leads": leads, "total": total,
         "page": page, "total_pages": total_pages,
         "status_filter": status,
@@ -81,8 +89,8 @@ async def lead_detail(request: Request, request_id: str, db: AsyncSession = Depe
     logs = await pipeline_service.get_logs_for_request(db, rid) if lead else []
     tokens = await token_service.get_usage_by_request(db, rid) if lead else []
 
-    return templates.TemplateResponse("lead_detail.html", {
-        "request": request, "current_page": "leads",
+    return templates.TemplateResponse(request, "lead_detail.html", {
+        "current_page": "leads",
         "lead": lead, "pipeline_logs": logs, "token_records": tokens,
     })
 
@@ -103,8 +111,8 @@ async def pipeline_runs(request: Request, db: AsyncSession = Depends(get_db)):
         logs = await pipeline_service.get_logs_for_request(db, run.request_id)
         run_data.append({"lead": run, "logs": logs, "step_count": len(logs)})
 
-    return templates.TemplateResponse("pipeline.html", {
-        "request": request, "current_page": "pipeline",
+    return templates.TemplateResponse(request, "pipeline.html", {
+        "current_page": "pipeline",
         "runs": run_data,
     })
 
@@ -114,8 +122,8 @@ async def pipeline_runs(request: Request, db: AsyncSession = Depends(get_db)):
 @router.get("/tokens", include_in_schema=False)
 async def tokens_page(request: Request, db: AsyncSession = Depends(get_db)):
     summary = await token_service.get_usage_summary(db)
-    return templates.TemplateResponse("tokens.html", {
-        "request": request, "current_page": "tokens",
+    return templates.TemplateResponse(request, "tokens.html", {
+        "current_page": "tokens",
         "summary": summary,
     })
 
@@ -124,8 +132,8 @@ async def tokens_page(request: Request, db: AsyncSession = Depends(get_db)):
 
 @router.get("/search", include_in_schema=False)
 async def search_page(request: Request):
-    return templates.TemplateResponse("search.html", {
-        "request": request, "current_page": "search",
+    return templates.TemplateResponse(request, "search.html", {
+        "current_page": "search",
     })
 
 
@@ -134,16 +142,39 @@ async def search_page(request: Request):
 @router.get("/settings", include_in_schema=False)
 async def settings_page(request: Request, db: AsyncSession = Depends(get_db)):
     configs = await admin_service.get_all_configs(db)
-    return templates.TemplateResponse("settings.html", {
-        "request": request, "current_page": "settings",
+    return templates.TemplateResponse(request, "settings.html", {
+        "current_page": "settings",
         "configs": configs,
     })
 
 
 # ── Enrich Form ──────────────────────────────────────────────────────────────
-
+ 
 @router.get("/enrich", include_in_schema=False)
 async def enrich_page(request: Request):
-    return templates.TemplateResponse("enrich.html", {
-        "request": request, "current_page": "enrich",
+    return templates.TemplateResponse(request, "enrich.html", {
+        "current_page": "enrich",
     })
+
+
+# ── Prompts ──────────────────────────────────────────────────────────────────
+
+@router.get("/prompts", include_in_schema=False)
+async def prompts_page(request: Request, db: AsyncSession = Depends(get_db)):
+    prompts = await prompt_service.get_all_prompts(db)
+    return templates.TemplateResponse(request, "prompts.html", {
+        "current_page": "prompts",
+        "prompts": prompts,
+    })
+
+
+# ── Human Review Queue ───────────────────────────────────────────────────────
+
+@router.get("/review", include_in_schema=False)
+async def review_page(request: Request, db: AsyncSession = Depends(get_db)):
+    leads = await review_service.get_leads_needing_review(db)
+    return templates.TemplateResponse(request, "review.html", {
+        "current_page": "review",
+        "leads": leads,
+    })
+

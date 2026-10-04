@@ -100,6 +100,8 @@ def run_pipeline(
             payload_on_success=lambda result: {
                 "has_gaps": result is not None,
                 "missing_fields": result.missing_fields if result else [],
+                "prompt_version": getattr(result, "_prompt_version", None) if result else None,
+                "prompt_version_id": getattr(result, "_prompt_version_id", None) if result else None,
             },
         )
 
@@ -116,12 +118,15 @@ def run_pipeline(
                 payload_on_success=lambda result: {
                     "confidence_score": result.confidence_score,
                     "sources_used": result.sources_used,
+                    "prompt_version": getattr(result, "_prompt_version", None),
+                    "prompt_version_id": getattr(result, "_prompt_version_id", None),
                     "fields_filled": [
                         k for k, v in result.model_dump().items()
                         if v is not None and k not in ("confidence_score", "sources_used", "company_name")
                     ],
                 },
             )
+
         else:
             # Log that fallback was skipped
             pipeline_service.log_step_sync(

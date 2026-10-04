@@ -22,20 +22,23 @@ from app.api import (
     enrich_router,
     leads_router,
     pipeline_router,
+    prompts_router,
+    review_router,
     search_router,
     token_usage_router,
 )
-from app.api.ws import router as ws_router
-from app.database import engine
 
+from app.api.metrics import router as metrics_router
+from app.api.ws import router as ws_router
+from app.config import settings
+from app.database import engine
+from app.pipeline import context
+from app.services import observability
+
+# Configure structured JSON logging with correlation filter
+observability.configure_logging(as_json=settings.APP_ENV != "development")
 logger = logging.getLogger(__name__)
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
 
 
 @asynccontextmanager
@@ -77,11 +80,17 @@ app.add_middleware(
 
 # ── Mount API Routers ──
 app.include_router(enrich_router)
+app.include_router(review_router)
 app.include_router(leads_router)
 app.include_router(pipeline_router)
 app.include_router(admin_router)
+app.include_router(prompts_router)
 app.include_router(token_usage_router)
 app.include_router(search_router)
+app.include_router(metrics_router)
+
+
+
 
 # ── Mount WebSocket Router ──
 app.include_router(ws_router)

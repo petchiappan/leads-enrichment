@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}Prompt Management{% endblock %}
+{% block page_title %}Prompt Management{% endblock %}
+{% block breadcrumb %}AI Platform / Prompts{% endblock %}
+
+{% block content %}
+<div class="card mb-6">
+    <div class="card-header">
+        <div>
+            <h3>Registered Prompts & Version History</h3>
+            <p class="text-sm text-light mt-1">Dynamic prompt catalog, runtime versioning, and zero-downtime atomic rollbacks.</p>
+        </div>
+        <button onclick="document.getElementById('new-prompt-modal').classList.toggle('hidden')" class="btn btn-primary btn-sm">
+            + New Version
+        </button>
+    </div>
+
+    {% if prompts %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Prompt Name</th>
+                    <th>Version</th>
+                    <th>Env</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th style="text-align:right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in prompts %}
+                <tr>
+                    <td>
+                        <strong style="color:var(--blue-800)">{{ p.name }}</strong>
+                    </td>
+                    <td><span class="badge badge-skipped td-mono">{{ p.version }}</span></td>
+                    <td><span class="text-sm text-light">{{ p.environment }}</span></td>
+                    <td>
+                        {% if p.is_active %}
+                        <span class="badge badge-completed"><span class="pulse"></span>ACTIVE</span>
+                        {% else %}
+                        <span class="badge badge-pending">INACTIVE</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-sm text-light">{{ p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else '' }}</td>
+                    <td style="text-align:right">
+                        <div style="display:inline-flex;gap:6px;">
+                            <button onclick="viewPromptContent({{ p.id }}, '{{ p.name }}', '{{ p.version }}')" class="btn btn-secondary btn-sm" style="padding:4px 8px;">
+                                View
+                            </button>
+                            <button onclick="viewPromptDiff({{ p.id }}, '{{ p.name }}', '{{ p.version }}')" class="btn btn-secondary btn-sm" style="padding:4px 8px;">
+                                Diff
+                            </button>
+                            {% if not p.is_active %}
+                            <button onclick="activatePrompt({{ p.id }})" class="btn btn-sm" style="background:var(--blue-600);color:#fff;border:none;cursor:pointer;padding:4px 10px;border-radius:6px;font-weight:600;">
+                                Activate
+                            </button>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state" style="padding:40px;">
+        <div class="icon">📝</div>
+        <h3>No prompts registered</h3>
+        <p class="text-sm text-light">Seed migrations or register a prompt version to get started.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal for New Prompt Version -->
+<div id="new-prompt-modal" class="hidden card mb-6" style="border:2px solid var(--blue-300);background:var(--blue-50);">
+    <div class="card-header">
+        <h3>Create New Prompt Version</h3>
+        <button onclick="document.getElementById('new-prompt-modal').classList.add('hidden')" style="background:none;border:none;cursor:pointer;font-size:1.2rem;">✕</button>
+    </div>
+    <form id="create-prompt-form" onsubmit="handleCreatePrompt(event)">
+        <div class="grid-2">
+            <div class="form-group">
+                <label>Prompt Name</label>
+                <select id="new-prompt-name" required>
+                    <option value="fallback_system_prompt">fallback_system_prompt</option>
+                    <option value="intelligence_gate_prompt">intelligence_gate_prompt</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Version (SemVer)</label>
+                <input type="text" id="new-prompt-version" placeholder="v1.1.0" required />
+            </div>
+        </div>
+        <div class="grid-2">
+            <div class="form-group">
+                <label>Environment</label>
+                <input type="text" id="new-prompt-env" value="production" required />
+            </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-top:28px;">
+                <input type="checkbox" id="new-prompt-active" checked />
+                <label for="new-prompt-active" style="margin:0;cursor:pointer;">Activate immediately upon creation</label>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Prompt Template Content</label>
+            <textarea id="new-prompt-content" rows="8" required style="font-family:'JetBrains Mono', monospace;font-size:.85rem;"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Create Version</button>
+    </form>
+</div>
+
+<!-- Modal for Prompt Viewer / Diff -->
+<div id="prompt-viewer-card" class="hidden card mb-6">
+    <div class="card-header">
+        <h3 id="viewer-title">Prompt Details</h3>
+        <button onclick="document.getElementById('prompt-viewer-card').classList.add('hidden')" style="background:none;border:none;cursor:pointer;font-size:1.2rem;">✕</button>
+    </div>
+    <pre id="viewer-content" style="background:var(--gray-900, #0f172a);color:#f8fafc;padding:16px;border-radius:8px;font-family:'JetBrains Mono', monospace;font-size:.82rem;white-space:pre-wrap;max-height:450px;overflow-y:auto;"></pre>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function activatePrompt(promptId) {
+    if (!confirm('Are you sure you want to activate this prompt version? It will immediately take effect for all subsequent enrichment runs.')) return;
+    try {
+        const res = await fetch(`/api/admin/prompts/${promptId}/activate`, { method: 'POST' });
+        if (res.ok) {
+            showToast('Prompt version activated successfully');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            const d = await res.json();
+            showToast(d.detail || 'Activation failed', 'error');
+        }
+    } catch {
+        showToast('Network error activating prompt', 'error');
+    }
+}
+
+async function viewPromptContent(promptId, name, version) {
+    const card = document.getElementById('prompt-viewer-card');
+    const title = document.getElementById('viewer-title');
+    const content = document.getElementById('viewer-content');
+    try {
+        const res = await fetch(`/api/admin/prompts`);
+        const list = await res.json();
+        const p = list.find(item => item.id === promptId);
+        if (p) {
+            title.textContent = `${name} (${version})`;
+            content.textContent = p.content;
+            card.classList.remove('hidden');
+            card.scrollIntoView({ behavior: 'smooth' });
+        }
+    } catch {
+        showToast('Failed to load prompt content', 'error');
+    }
+}
+
+async function viewPromptDiff(promptId, name, version) {
+    const card = document.getElementById('prompt-viewer-card');
+    const title = document.getElementById('viewer-title');
+    const content = document.getElementById('viewer-content');
+    try {
+        const res = await fetch(`/api/admin/prompts/${promptId}/diff`);
+        const data = await res.json();
+        title.textContent = `Diff: ${name} (${version} vs. Active ${data.active_version || 'none'})`;
+        content.textContent = data.diff || '(No difference with active version)';
+        card.classList.remove('hidden');
+        card.scrollIntoView({ behavior: 'smooth' });
+    } catch {
+        showToast('Failed to compute diff', 'error');
+    }
+}
+
+async function handleCreatePrompt(e) {
+    e.preventDefault();
+    const payload = {
+        name: document.getElementById('new-prompt-name').value,
+        version: document.getElementById('new-prompt-version').value.trim(),
+        environment: document.getElementById('new-prompt-env').value.trim(),
+        content: document.getElementById('new-prompt-content').value,
+        is_active: document.getElementById('new-prompt-active').checked
+    };
+    try {
+        const res = await fetch('/api/admin/prompts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            showToast('Prompt version created');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            const err = await res.json();
+            showToast(err.detail || 'Failed to create prompt', 'error');
+        }
+    } catch {
+        showToast('Network error creating prompt', 'error');
+    }
+}
+</script>
+{% endblock %}
